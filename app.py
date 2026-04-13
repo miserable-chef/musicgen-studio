@@ -38,20 +38,29 @@ with st.sidebar:
         "**Device:** `{}` \n\n"
         "**Docs:** [MusicGen Paper](https://arxiv.org/abs/2306.05284)".format(
             model_size,
-            "cuda" if torch.cuda.is_available() else "cpu",
+            "cuda" if torch.cuda.is_available()
+            else "mps (Apple M1)" if torch.backends.mps.is_available()
+            else "cpu",
         )
     )
 
 
 # ── model loading ─────────────────────────────────────────────────────────────
+def get_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 @st.cache_resource(show_spinner="Loading MusicGen model — first run downloads weights...")
 def load_model(size: str):
     from transformers import AutoProcessor, MusicgenForConditionalGeneration
     model_id = f"facebook/musicgen-{size}"
     processor = AutoProcessor.from_pretrained(model_id)
     model = MusicgenForConditionalGeneration.from_pretrained(model_id)
-    if torch.cuda.is_available():
-        model = model.cuda()
+    model = model.to(get_device())
     model.eval()
     return processor, model
 
@@ -101,8 +110,8 @@ if generate and prompt.strip():
                 padding=True,
                 return_tensors="pt",
             )
-            if torch.cuda.is_available():
-                inputs = {k: v.cuda() for k, v in inputs.items()}
+            device = get_device()
+            inputs = {k: v.to(device) for k, v in inputs.items()}
 
             with torch.no_grad():
                 audio_values = model.generate(
@@ -141,7 +150,7 @@ if generate and prompt.strip():
                     "sampling_rate": sampling_rate,
                     "guidance_scale": guidance_scale,
                     "samples_generated": len(audio_np),
-                    "device": "cuda" if torch.cuda.is_available() else "cpu",
+                    "device": str(get_device()),
                 })
 
         except Exception as e:
